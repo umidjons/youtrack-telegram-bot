@@ -48,6 +48,11 @@ class YouTrackBot {
 					}
 
 					this.issues = issues;
+
+					if (!issues || issues.length == 0) {
+						return this.callbackStart(null, true);
+					}
+
 					this.send();
 				}
 			);
