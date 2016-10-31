@@ -1,0 +1,27 @@
+{
+  "youtrack": {
+    "authType": "oauth2",
+    "baseUrl": "https://my-company.myjetbrains.com/youtrack",
+    "credentials": {
+      "username": "my-youtrack-login",
+      "password": "my-youtrack-password"
+    },
+    "oauth2": {
+      "url": "https://my-company.myjetbrains.com/hub/api/rest/oauth2/token",
+      "clientServiceId": "1fac2ed9-2140-43d9-af3e-3a4a2550ba34",
+      "clientServiceSecret": "41f1dd66-9ece-4408-94d3-ab683a0a684e",
+      "scope": "1fac2ed9-2140-43d9-af3e-3a4a2550ba34"
+    }
+  },
+  "telegram": {
+    "defaultToken": "183108291:BAFK8LNaQc0MP1GlAe9SxCd-cjc1hz-zCdw",
+    "max": 500,
+    "projects": [
+      {
+        "token": "183108291:BAFK8LNaQc0MP1GlAe9SxCd-cjc1hz-zCdw",
+        "projectName": "MY_PROJECT_NAME",
+        "chatId": "-1002095315097"
+      }
+    ]
+  }
+}
