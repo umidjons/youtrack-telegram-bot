@@ -1,257 +1,203 @@
 'use strict';
 
-var qs = require('querystring');
-var moment = require('moment');
-var async = require('async');
+const request = require('request-promise');
+const debug = require('debug')('youtrack:youtrack');
+const moment = require('moment');
+const qs = require('querystring');
 
-/**
- * Options:
- * config.authType = oauth2 | credentials
- */
-class YouTrack {
+const config = require('./bot-config.json');
 
-	constructor(config) {
-		this.config = config;
-		this.request = require('request').defaults({jar: true});
-		this.jar = this.request.jar();
-		this.baseUrl = this.config.youtrack.baseUrl;
-		this.authCookie = null;
-		this.accessToken = null;
-	}
+debug.log = console.log.bind(console);
 
-	getAccessToken(cb) {
-		// generate Base64(CLIENT_SERVICE_ID:CLIENT_SERVICE_SECRET) Authorization value
-		let authValue = (new Buffer(this.config.youtrack.oauth2.clientServiceId + ':' + this.config.youtrack.oauth2.clientServiceSecret)).toString('base64');
+class Youtrack {
+    constructor(config) {
+        this.config = config;
+        this.baseUrl = this.config.youtrack.baseUrl;
+        this.accessToken = null;
+        this.tokenType = null;
+    }
 
-		let params = {
-			url: this.config.youtrack.oauth2.url,
-			headers: {
-				Accept: 'application/json',
-				Authorization: 'Basic ' + authValue
-			},
-			form: {grant_type: 'client_credentials', scope: this.config.youtrack.oauth2.scope}
-		};
+    /**
+     * Gets access token by Client Service ID and Client Service Secret values.
+     * @returns {Promise.<void>}
+     */
+    async getAccessToken() {
+        // generate Base64(CLIENT_SERVICE_ID:CLIENT_SERVICE_SECRET) Authorization value
+        let authValue = (new Buffer(this.config.youtrack.oauth2.clientServiceId + ':' + this.config.youtrack.oauth2.clientServiceSecret)).toString('base64');
 
-		this.request.post(params, (err, resp, body) => {
-			if (err) {
-				return cb(err, null, resp, body);
-			}
+        let params = {
+            url: this.config.youtrack.oauth2.url,
+            headers: {
+                Accept: 'application/json',
+                Authorization: 'Basic ' + authValue
+            },
+            form: {grant_type: 'client_credentials', scope: this.config.youtrack.oauth2.scope}
+        };
 
-			let data = JSON.parse(body);
+        let response = await request.post(params);
+        debug('getAccessToken() response=%O', response);
 
-			if ('error' in data) {
-				return cb(Error(data.error_description, data.error_code), null, resp, body);
-			}
+        response = JSON.parse(response);
 
-			this.accessToken = data.access_token;
-			this.tokenType = data.token_type;
+        this.tokenType = response.token_type;
+        this.accessToken = response.access_token;
 
-			cb(null, this.accessToken, resp, body);
-		});
-	}
+        return response;
+    }
 
-	/**
-	 * Authorize on YouTrack with given username and password.
-	 * @param {string} username login
-	 * @param {string} password password
-	 * @param {function} cb callback with signature cb(err, authCookie, response, body).
-	 */
-	login(username, password, cb) {
-		var url = `${this.baseUrl}/rest/user/login`;
-		var params = {
-			url: url,
-			form: {login: username, password: password},
-			jar: this.jar
-		};
+    async issuesChanges(projectName, options = {updatedAfter: moment().subtract(1, 'days').format('x'), max: 10}) {
+        let issues = await this.issuesByProject(projectName, options);
+        let issuesWithChanges = [];
+        for (let issue of issues) {
+            let _issue = await this.issueChanges(issue.id, options.updatedAfter);
+            debug('issuesChanges() _issue=', _issue);
+            issuesWithChanges.push(_issue);
+        }
+        debug('issuesChanges() Count of issues with changes:', issuesWithChanges.length);
+        return issuesWithChanges;
+    }
 
-		this.request.post(params, (err, resp, body) => {
-			if (err) {
-				return cb(err, null, resp, body);
-			}
+    async issuesByProject(projectName, options = {updatedAfter: moment().subtract(1, 'days').format('x'), max: 10}) {
+        let queryParams = {
+            updatedAfter: options.updatedAfter,
+            max: options.max,
+            with: ['updated']
+        };
 
-			this.authCookie = this.jar.getCookieString(url);
+        queryParams = qs.stringify(queryParams);
+        let url = `${this.baseUrl}/rest/issue/byproject/${projectName}?${queryParams}`;
+        let params = {url: url, headers: this._getHeaders()};
+        let response = await request.get(params);
+        response = JSON.parse(response);
 
-			cb(null, this.authCookie, resp, body);
-		});
-	}
+        debug('issuesByProject() response=%j', response);
 
-	/**
-	 * Get list of issues for the specified project.
-	 * @param {string} project name of the project
-	 * @param {object} options options object with the following default value
-	 *        {updateAfterTimestamp: '-1 day from now', max: 10}
-	 * @param {function} cb callback function with signature cb(err, issues, response, body)
-	 */
-	issuesByProject(project, options, cb) {
-		var defaultUpdatedAfterTimestamp = moment().subtract(1, 'days').format('x');
+        let issueList = [];
+        for (let issue of response) {
+            if (!issue.id.startsWith(projectName)) {
+                debug('issuesByProject() Ignoring invalid issue: ', issue);
+                continue;
+            }
+            let _issue = Object.assign({id: issue.id}, this._normalizeFields(issue.field));
+            issueList.push(_issue);
+        }
 
-		var opts = Object.assign({updatedAfterTimestamp: defaultUpdatedAfterTimestamp, max: 10}, options);
+        debug('issuesByProject() issueList=', issueList);
 
-		var query_params = {
-			max: opts.max,
-			updatedAfter: opts.updatedAfterTimestamp,
-			with: ['id', 'updated']
-		};
+        return issueList;
+    }
 
-		var headers = {Accept: 'application/json'};
+    async issueChanges(issueId, updatedAfter) {
+        let url = `${this.baseUrl}/rest/issue/${issueId}/changes`;
+        let params = {url: url, headers: this._getHeaders()};
+        let issue = {changes: []};
 
-		// set access token if exists
-		if (this.accessToken) {
-			headers.Authorization = this.tokenType + ' ' + this.accessToken;
-		}
+        let response = null;
 
-		var query_params_str = qs.stringify(query_params);
-		var url = `${this.baseUrl}/rest/issue/byproject/${project}?${query_params_str}`;
+        try {
+            response = await request.get(params);
+            response = JSON.parse(response);
+        }
+        catch (err) {
+            debug('issueChanges() error=', err);
+            if (err.statusCode == 404) {
+                return issue;
+            }
+        }
 
-		var params = {url: url, jar: this.jar, headers: headers};
+        debug('issueChanges() response=%j', response);
 
-		this.request.get(params, (err, resp, body) => {
-			if (err) {
-				return cb(err, null, resp, body);
-			}
+        if (response.issue) {
+            // fill issue attributes
+            issue.id = response.issue.id;
+            let res = this._normalizeFields(response.issue.field);
+            Object.assign(issue, res);
+        }
 
-			var issueList = [];
-			var issues = JSON.parse(body);
-			for (let issue of issues) {
-				let _issue = {};
-				_issue.id = issue.id;
-				issue.field.forEach(function (fld) {
-					_issue[fld.name] = fld.value;
-				});
+        if (response.change) {
+            for (let change of response.change) {
+                let _change = {changedFields: []};
+                let res = this._normalizeFields(change.field);
+                issue.changes.push(res);
+            }
+        }
 
-				issueList.push(_issue);
-			}
-			cb(null, issueList, resp, body);
-		});
-	}
+        issue.changes = this._changesUpdatedAfter(issue, updatedAfter);
 
-	/**
-	 * Get issue instance with changes after specified time.
-	 * @param {string} issueId id of the issue
-	 * @param {number} updatedAfterTimestamp updated after date and time in timestamp
-	 * @param {function} cb callback function with signature cb(err, issue, response, body)
-	 */
-	issueHistory(issueId, updatedAfterTimestamp, cb) {
-		var url = `${this.baseUrl}/rest/issue/${issueId}/changes`;
+        debug('issueChanges() issue=%O', issue);
 
-		var headers = {Accept: 'application/json'};
+        return issue;
+    }
 
-		// set access token if exists
-		if (this.accessToken) {
-			headers.Authorization = this.tokenType + ' ' + this.accessToken;
-		}
+    _normalizeFields(fields) {
+        let object = {};
 
-		var params = {url: url, jar: this.jar, headers: headers};
-		this.request.get(params, (err, resp, body) => {
-			if (err) {
-				return cb(err, null, resp, body);
-			}
+        for (let field of fields) {
+            if (Array.isArray(field.value)) {
 
-			//return cb(null, JSON.parse(body), resp, body);
+                if (Array.isArray(field.valueId)) {
+                    object[field.name] = `${field.value[0]} [${field.valueId[0]}]`;
+                } else {
+                    object[field.name] = field.value[0].value;
+                }
 
-			var issue = {changes: []};
-			var issueHistory = JSON.parse(body);
+            }
+            else if ('oldValue' in field && 'newValue' in field) {
 
-			if (issueHistory.issue) {
-				// fill issue attributes
-				issue.id = issueHistory.issue.id;
-				issueHistory.issue.field.forEach(function (fld) {
-					issue[fld.name] = fld.value;
-				});
-			}
+                if (object.changedFields === undefined)
+                    object.changedFields = [];
 
-			if (issueHistory.change) {// fill changes
-				issueHistory.change.forEach(function (change) {
-					var _change = {changedFields: []};
-					change.field.forEach(function (fld) {
-						if ('oldValue' in fld && 'newValue' in fld) {
-							_change.changedFields.push(fld.name);
-							let oldVal = fld.oldValue[0];
-							let newVal = fld.newValue[0];
-							if (fld.name.toLowerCase() == 'sprint') {
-								if (typeof oldVal == 'object' && 'id' in oldVal) {
-									oldVal = oldVal.id;
-								}
-								if (typeof newVal == 'object' && 'id' in newVal) {
-									newVal = newVal.id;
-								}
-							}
-							_change[fld.name] = {oldValue: oldVal, newValue: newVal};
-						} else {
-							_change[fld.name] = fld.value;
-						}
-					});
-					issue.changes.push(_change);
-				});
-			}
+                object.changedFields.push(field.name);
 
-			issue.changes = this._changesUpdatedAfter(issue, updatedAfterTimestamp);
+                let oldVal = field.oldValue[0];
+                let newVal = field.newValue[0];
 
-			cb(null, issue, resp, body);
-		});
-	}
+                if (field.name.toLowerCase() === 'sprint') {
+                    if (typeof oldVal === 'object' && 'id' in oldVal) {
+                        oldVal = oldVal.id;
+                    }
 
-	/**
-	 * Filters out issue changes by updated after timestamp value.
-	 * @param {object} issue issue instance
-	 * @param {number} tsUpdated updated after date and time value in timestamp
-	 * @returns {Array} filtered list of changes, which are updated after given timestamp
-	 * @private
-	 */
-	_changesUpdatedAfter(issue, tsUpdated) {
-		if (!issue || !issue.changes || !tsUpdated) {
-			return [];
-		}
+                    if (typeof newVal === 'object' && 'id' in newVal) {
+                        newVal = newVal.id;
+                    }
+                }
 
-		return issue.changes.filter(function (change) {
-			return change.updated >= tsUpdated;
-		});
-	}
+                object[field.name] = {oldValue: oldVal, newValue: newVal};
+            }
+            else {
+                object[field.name] = field.value;
+            }
+        }
 
-	/**
-	 * Get issues with changes.
-	 * @param {string} project project name
-	 * @param {object} options options object with the following default value
-	 *        {updateAfterTimestamp: '-1 day from now', max: 10}
-	 * @param {function} cb callback function with signature cb(err, issues)
-	 */
-	issuesHistory(project, options, cb) {
-		this.issuesByProject(project, options, (err, issues, resp, body) => {
-			if (err) {
-				return cb(err);
-			}
+        return object;
+    }
 
-			let issue_ids = issues.map(issue => issue.id);
+    /**
+     * Filters out issue changes by updated after timestamp value.
+     * @param {object} issue issue instance
+     * @param {number} tsUpdated updated after date and time value in timestamp
+     * @returns {Array} filtered list of changes, which are updated after given timestamp
+     * @private
+     */
+    _changesUpdatedAfter(issue, tsUpdated) {
+        if (!issue || !issue.changes || !tsUpdated) {
+            return [];
+        }
 
-			async.map(
-				issue_ids, // list of issue ids
+        return issue.changes.filter(change => {
+            return change.updated >= tsUpdated;
+        });
+    }
 
-				// iteratee
-				(id, cbHistory) => {
-					this.issueHistory(id, options.updatedAfterTimestamp, (err, issue) => {
-						if (err) {
-							return cbHistory(err);
-						}
-						cbHistory(null, issue);
-					});
-				},
+    _getHeaders() {
+        let headers = {Accept: 'application/json'};
 
-				// done callback
-				(err, results) => {
-					if (err) {
-						return cb(err);
-					}
+        // set access token if exists
+        if (this.accessToken)
+            headers.Authorization = this.tokenType + ' ' + this.accessToken;
 
-					// ignore issues without changes or created before the specified date and time (as timestamp)
-					results = results.filter((issue) => {
-						return issue && ((issue.changes && issue.changes.length > 0) || issue.created >= options.updatedAfterTimestamp);
-					});
-
-					cb(null, results);
-				}
-			);
-		});
-	}
+        return headers;
+    }
 }
 
-module.exports = YouTrack;
+module.exports = Youtrack;

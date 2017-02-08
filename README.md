@@ -9,7 +9,7 @@ This application gets updates from YouTrack and publishes them into Telegram Cha
 For example, on `ubuntu` one can run following commands to install `node.js`:
 ```
 sudo apt-get install -y build-essential
-curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
+curl -sL https://deb.nodesource.com/setup_7.x | sudo -E bash -
 sudo apt-get install nodejs
 ```
 
@@ -35,7 +35,35 @@ tail -f /appdir/app.log
 
 Or configure cron task to run bot on each minute like the following:
 ```bash
-* * * * * cd /appdir && /usr/bin/node ./src/app.js >> ./app.log 2>&1
+*/2 * * * * cd /appdir && /usr/bin/node ./src/app.js >> ./app.log 2>&1
+```
+
+It is also possible to run the bot via `pm2` with `cron_restart` option.
+Sample configuration for `pm2` may look like to the following:
+```json
+{
+  "name": "youtrack-bot",
+  "script": "/appdir/src/app.js",
+  "node_args": [
+    "--harmony"
+  ],
+  "env": {
+    "DEBUG": "youtrack:*",
+    "DEBUG_DEPTH": 10,
+    "DEBUG_COLORS": 0
+  },
+  "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+  "out_file": "/appdir/logs/youtrack_bot.log",
+  "error_file": "/appdir/logs/youtrack_bot_error.log",
+  "exec_mode": "cluster",
+  "instances": 1,
+  "cron_restart": "*/2 * * * *"
+}
+```
+
+Run command maybe something like this:
+```bash
+sudo pm2 start /appdir/src/app.json
 ```
 
 ## Configuration
@@ -72,17 +100,13 @@ Response will contain the channel's numeric ID, like the following:
 
 In the above example `-1001072411791` is the channel ID.
 
-`authType` can accept either `oauth2` or `credentials` (`authType=oauth2 | credentials`).
+`authType` accepts `oauth2`.
 
 Demo configuration is here:
 ```json
 {
 	"youtrack": {
 		"authType": "oauth2",
-		"credentials": {
-			"username": "my_youtrack_username",
-			"password": "my_youtrack_password"
-		},
 		"oauth2": {
 			"url": "https://myorgatization.myjetbrains.com/hub/api/rest/oauth2/token",
 			"clientServiceId": "7fec3de9-0040-43c9-bf3e-3c4a2250ba02",

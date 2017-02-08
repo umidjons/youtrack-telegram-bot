@@ -1,15 +1,22 @@
 {
   "name": "youtrack-telegram-bot",
-  "version": "1.0.0",
-  "description": "",
+  "version": "2.0.0",
+  "description": "Telegram Bot to notify Youtrack updates",
   "main": "app.js",
   "scripts": {
     "start": "node src/app.js",
     "test": "node_modules/.bin/mocha -w"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "youtrack",
+    "telegram",
+    "bot"
+  ],
+  "author": "umidjons <almatov.us@gmail.com>",
   "license": "ISC",
+  "engines": {
+    "node": ">=7.0"
+  },
   "devDependencies": {
     "chai": "^3.5.0",
     "chai-http": "^3.0.0",
@@ -18,8 +25,10 @@
   },
   "dependencies": {
     "async": "^2.0.1",
+    "debug": "^2.6.0",
     "moment": "^2.14.1",
     "node-telegram-bot-api": "^0.23.3",
-    "request": "^2.74.0"
+    "request": "^2.74.0",
+    "request-promise": "^4.1.1"
   }
 }

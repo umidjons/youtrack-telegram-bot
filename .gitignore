@@ -3,3 +3,6 @@ node_modules
 last/*
 src/bot-config.json
 /INSTRUCTION.md
+logs/
+_bot-config.json
+app2.json

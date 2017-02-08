@@ -1,23 +1,21 @@
 'use strict';
 
-var YouTrackBot = require('./youtrackbot');
-var config = require('./bot-config-sample.json');
+const debug = require('debug')('youtrack:app');
+const YouTrackBot = require('./youtrackbot');
+const config = require('./bot-config-sample.json');
 
-if (config && config.telegram && config.telegram.projects && config.telegram.projects.length > 0) {
-	if (!config.telegram.defaultToken) {
-		return console.error('Invalid configuration: Token is not specified.');
-	}
+debug.log = console.log.bind(console);
 
-	for (let proj of config.telegram.projects) {
-		let telToken = proj.token || config.telegram.defaultToken;
-		let ytBot = new YouTrackBot(proj.projectName, telToken, proj.chatId, config);
-		ytBot.start(function (err, isFinished) {
-			if (err) {
-				return console.error(proj.projectName, ':', err);
-			}
-			console.log(`${proj.projectName} done.`);
-		});
-	}
-} else {
-	console.warn('No projects to check.');
-}
+(async function () {
+    for (let project of config.telegram.projects) {
+        project.token = project.token || config.telegram.defaultToken;
+        let ytBot = new YouTrackBot(config, project);
+        try {
+            await ytBot.start();
+            debug(`${project.projectName} done.`);
+        }
+        catch (error) {
+            debug('Error occurred:', error);
+        }
+    }
+})();

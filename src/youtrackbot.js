@@ -1,242 +1,183 @@
 'use strict';
 
-var TBot = require('node-telegram-bot-api');
-var moment = require('moment');
-var fs = require('fs');
-var path = require('path');
-var YouTrack = require('./youtrack');
+const TBot = require('node-telegram-bot-api');
+const moment = require('moment');
+const fs = require('fs');
+const path = require('path');
+const debug = require('debug')('youtrack:bot');
+const config = require('./bot-config.json');
+const Youtrack = require('./youtrack');
+
+debug.log = console.log.bind(console);
 
 const DATETIME_FORMAT = 'DD.MM.YYYY HH:mm:ss';
 
-class YouTrackBot {
-	constructor(project, tel_token, tel_chat_id, config) {
-		this.config = config;
+class YoutrackBot {
+    constructor(config, telegramOptions = {token: null, chatId: null}) {
+        debug('constructor() config=', config, 'telegramOptions=', telegramOptions);
+        this.projectName = telegramOptions.projectName;
+        this.config = config;
+        this.telegram = Object.assign({token: null, chatId: null}, telegramOptions);
+        this.youtrackIssueBaseUrl = `${this.config.youtrack.baseUrl}/issue/`;
+        this.file = `last/${this.projectName}_last_request.json`;
 
-		this.projectName = project;
-		this.file = `last/${this.projectName}_last_request.json`;
-		this.youtrackIssueBaseUrl = `${config.youtrack.baseUrl}/issue/`;
+        this.bot = new TBot(this.telegram.token);
+        debug('constructor() bot created.');
+    }
 
-		if (this.config.youtrack.authType == 'credentials') {
-			this.youtrack_user = this.config.youtrack.credentials.username;
-			this.youtrack_pswd = this.config.youtrack.credentials.password;
-		}
+    async start() {
+        let max = this.config.telegram.max || 100;
 
-		this.telegram = {};
-		this.telegram.token = tel_token;
-		this.telegram.chat_id = tel_chat_id;
-		this.telegram.pending = 0;
+        debug('start() Maximum messages for telegram is:', max);
 
-		this.bot = new TBot(this.telegram.token);
-	}
+        this.yt = new Youtrack(this.config);
 
-	_process(cb) {
-		let max = this.config.telegram.max || 100;
-		this._updatedAfter((err, updatedAfter) => {
-			if (err) {
-				return cb(err);
-			}
+        let token = await this.yt.getAccessToken();
+        let last = await this._getUpdatedAfter();
 
-			this.yt.issuesHistory(
-				this.projectName,
-				{
-					updatedAfterTimestamp: updatedAfter.ts,
-					max: max
-				},
-				(err, issues) => {
-					if (err) {
-						return cb(err);
-					}
+        this.issues = await this.yt.issuesChanges(this.projectName, {updatedAfter: last.ts, max: max});
 
-					this.issues = issues;
+        return this._process();
+    }
 
-					if (!issues || issues.length == 0) {
-						return this.callbackStart(null, true);
-					}
+    async _getUpdatedAfter() {
+        let now = moment().subtract(10, 'days');
+        let default_last = {ts: now.format('x'), s: now.format(DATETIME_FORMAT)};
 
-					this.send();
-				}
-			);
-		});
-	}
+        let last = null;
 
-	start(cb) {
-		this.callbackStart = cb;
-		this.yt = new YouTrack(this.config);
+        try {
+            last = require(`../${this.file}`);
+        } catch (err) {
+            debug('_getUpdatedAfter() err=', err);
+            debug('_getUpdatedAfter() fallback to default value:', default_last);
+            last = default_last;
+        }
 
-		switch (this.config.youtrack.authType) {
-			case 'credentials':
-				this.yt.login(this.youtrack_user, this.youtrack_pswd, (err) => {
-					if (err) {
-						return cb(err);
-					}
+        debug('_getUpdatedAfter() last=', last);
 
-					this._process(cb);
-				});
-				break;
+        return last;
+    }
 
-			case 'oauth2':
-				this.yt.getAccessToken((err) => {
-					if (err) {
-						return cb(err);
-					}
+    _setUpdatedAfter() {
+        let now = moment();
+        let last = JSON.stringify({ts: now.format('x'), s: now.format(DATETIME_FORMAT)});
 
-					this._process(cb);
-				});
-				break;
-		}
-	}
+        debug('_setUpdatedAfter() new last value:', last);
 
-	send() {
-		for (let issue of this.issues) {
-			let issue_description = issue.description ? `\n<pre>${issue.description}</pre>` : '';
+        fs.writeFileSync(this.file, last);
+    }
 
-			// generate issue's URL
-			let issue_url = `${this.youtrackIssueBaseUrl}${issue.id}`;
+    _process() {
+        debug('_process() started.');
+        return new Promise(async(resolve, reject) => {
+            try {
 
-			// operation: created | updated
-			let issue_operation = 'created';
+                for (let issue of this.issues) {
+                    issue.description = issue.description ? `\n<pre>${issue.description}</pre>` : '';
+                    issue.url = `${this.youtrackIssueBaseUrl}${issue.id}`;
+                    issue.operation = issue.changes && issue.changes.length > 0 ? 'updated' : 'created'; // operation: created | updated
+                    issue.attachments = this._getAttachments(issue);
 
-			// generate links to attachments
-			let attachments = '';
-			if (issue.attachments && issue.attachments instanceof Array && issue.attachments.length > 0) {
-				attachments += '\n<i>Attachments:</i>\n';
-				for (let att of issue.attachments) {
-					attachments += `<a href="${att.url}">${att.value}</a>\n`;
-				}
-			}
+                    let changedFields = '';
+                    if (issue.operation === 'updated') {
+                        // send additional message for each change
+                        for (let change of issue.changes) {
+                            changedFields = this._getChangedFields(change);
+                            issue.message = this._getMessage(issue, changedFields, change.updated);
+                            issue.sendResult = await this._send(issue.message);
+                        }
+                    } else {
+                        issue.message = this._getMessage(issue, changedFields, issue.created);
+                        issue.sendResult = await this._send(issue.message);
+                    }
+                }
 
-			if (!issue.changes || issue.changes.length == 0) { // operation = create
+                debug('_process() resolved.');
 
-				// build message text
-				let msg = `<b>${issue.updaterName}</b> ${issue_operation} <a href="${issue_url}">${issue.id}</a> ${issue.summary} ${issue_description} ${attachments}`;
+                this._setUpdatedAfter();
 
-				// increment pending messages count
-				this.telegram.pending++;
+                resolve(this.issues);
 
-				// send message into chat
-				this._sendOneMsg(msg);
-			} else { // operation = update
-				for (let change of issue.changes) {
-					let changed_fields = '';
+            } catch (err) {
+                debug('_process() rejected. Error:', err);
+                reject(err);
+            }
+        });
+    }
 
-					// Normalize all changed fields
-					if (change.changedFields && change.changedFields.length > 0) {
-						for (let chf of change.changedFields) {
-							let old_val = change[chf].oldValue;
-							let new_val = change[chf].newValue;
+    _getAttachments(issue) {
+        debug('_getAttachments() attachments=', issue.attachments);
 
-							// if changed field is 'resolved', then convert its value from timestamp to normal date time
-							if (chf == 'resolved' && change[chf].newValue) { // process date time
-								new_val = moment(1 * change[chf].newValue).format(DATETIME_FORMAT);
-							} else if (chf == 'links' && change[chf].newValue) { // process links
-								let link = change[chf].newValue;
-								if ('type' in link && link.type && 'role' in link && link.role) {
-									new_val = `${link.role} ${link.value}`;
-								} else {
-									new_val = '';
-									for (let prop in link) {
-										new_val += `${prop} = ${link[prop]}\n`;
-									}
-								}
-							}
+        let attachments = '';
 
-							// take into account the field, if its old or new value exists
-							if (old_val || new_val) {
-								changed_fields += `\n<i>${chf}: ${old_val} -> ${new_val}</i>`;
-							}
-						}
-					}
+        if (issue.attachments && Array.isArray(issue.attachments) && issue.attachments.length > 0) {
 
-					// if control is here, then operation is update
-					issue_operation = 'updated';
+            attachments += '\n<i>Attachments:</i>\n';
 
-					// build message text
-					let msg = `<b>${change.updaterName}</b> ${issue_operation} <a href="${issue_url}">${issue.id}</a> ${issue.summary} ${issue_description} ${changed_fields} ${attachments}`;
+            for (let attachment of issue.attachments) {
+                attachments += `<a href="${attachment.url}">${attachment.value}</a>\n`;
+            }
+        }
 
-					// increment pending messages count
-					this.telegram.pending++;
+        debug('_getAttachments() attachments string=', attachments);
 
-					// send message into chat
-					this._sendOneMsg(msg);
-				}
-			}
-		}
-	}
+        return attachments;
+    }
 
-	_sendOneMsg(msg) {
-		// send message into chat
-		this.bot.sendMessage(this.telegram.chat_id, msg, {parse_mode: 'html'})
-			.then(
-				(resp) => {
-					this.telegram.pending--;
-					console.log('Message has been sent>', msg);
-					this.checkPending();
-				},
-				(error) => {
-					this.telegram.pending--;
-					console.error('Telegram error>', error);
-					this.checkPending();
-				}
-			);
-	}
+    _getMessage(issue, changedFields, time) {
+        let timeStr = moment(1 * time).format(DATETIME_FORMAT);
+        let msg = `<b>${issue.updaterName}</b> ${timeStr} ${issue.operation} <a href="${issue.url}">${issue.id}</a> ${issue.summary} ${issue.description} ${changedFields} ${issue.attachments}`;
 
-	checkPending() {
-		if (this.telegram.pending <= 0) {
-			console.log('The Bot has finished sending the messages.');
+        debug('_getMessage() message=', msg);
 
-			this._saveUpdatedAfter((err, last) => {
-				if (err) {
-					return this.callbackStart(err);
-				}
+        return msg;
+    }
 
-				console.log('New updated after saved:', last);
-				this.callbackStart(null, true);
-			});
+    _getChangedFields(change) {
+        debug('_getChangedFields() change=', change);
 
-			return true;
-		}
+        let changedFields = '';
 
-		return false;
-	}
+        if (Array.isArray(change.changedFields) && change.changedFields.length > 0) {
 
-	_updatedAfter(cb) {
-		let now = moment().subtract(10, 'days');
-		let default_last = {ts: now.format('x'), s: now.format(DATETIME_FORMAT)};
+            for (let changedField of change.changedFields) {
 
-		let last = null;
+                let oldVal = change[changedField].oldValue;
+                let newVal = change[changedField].newValue;
 
-		fs.stat(this.file, (err, stat) => {
-			if (err) {
-				if (err.code == 'ENOENT') {
-					last = default_last;
-					return cb(null, last);
-				} else {
-					return cb(err);
-				}
-			}
+                if (changedField == 'resolved' && newVal) {
+                    newVal = moment(1 * newVal).format(DATETIME_FORMAT);
+                }
 
-			fs.readFile(this.file, (err, data) => {
-				if (err) {
-					return cb(err);
-				}
+                if (changedField == 'links' && newVal) {
+                    if (newVal.type && newVal.role) {
+                        newVal = `${newVal.role} ${newVal.value}`;
+                    } else {
+                        let link = '';
+                        for (let prop in newVal) {
+                            link += `${prop} = ${newVal[prop]}`;
+                        }
+                        newVal = link;
+                    }
+                }
 
-				last = JSON.parse(data);
-				return cb(null, last);
-			});
-		});
-	}
+                if (oldVal || newVal) {
+                    changedFields += `\n<i>${changedField}: ${oldVal} -> ${newVal}</i>`;
+                }
+            }
 
-	_saveUpdatedAfter(cb) {
-		let now = moment();
-		let last = JSON.stringify({ts: now.format('x'), s: now.format(DATETIME_FORMAT)});
-		fs.writeFile(this.file, last, (err) => {
-			if (err) {
-				return cb(err);
-			}
+        }
 
-			cb(null, last);
-		});
-	}
+        debug('_getChangedFields() changedFields=', changedFields);
+
+        return changedFields;
+    }
+
+    _send(message) {
+        debug('_send() message=', message);
+        return this.bot.sendMessage(this.telegram.chatId, message, {parse_mode: 'html'});
+    }
 }
 
-module.exports = YouTrackBot;
+module.exports = YoutrackBot;

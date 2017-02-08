@@ -2,10 +2,6 @@
   "youtrack": {
     "authType": "oauth2",
     "baseUrl": "https://my-company.myjetbrains.com/youtrack",
-    "credentials": {
-      "username": "my-youtrack-login",
-      "password": "my-youtrack-password"
-    },
     "oauth2": {
       "url": "https://my-company.myjetbrains.com/hub/api/rest/oauth2/token",
       "clientServiceId": "1fac2ed9-2140-43d9-af3e-3a4a2550ba34",

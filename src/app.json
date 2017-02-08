@@ -1,0 +1,18 @@
+{
+  "name": "youtrack-bot",
+  "script": "/home/ubuntu/youtrack_telegram_bot/src/app.js",
+  "node_args": [
+    "--harmony"
+  ],
+  "env": {
+    "DEBUG": "youtrack:*",
+    "DEBUG_DEPTH": 10,
+    "DEBUG_COLORS": 0
+  },
+  "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+  "out_file": "/home/ubuntu/youtrack_telegram_bot/logs/youtrack_bot.log",
+  "error_file": "/home/ubuntu/youtrack_telegram_bot/logs/youtrack_bot_error.log",
+  "exec_mode": "cluster",
+  "instances": 1,
+  "cron_restart": "*/2 * * * *"
+}
