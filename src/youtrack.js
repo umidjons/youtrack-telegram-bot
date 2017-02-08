@@ -5,8 +5,6 @@ const debug = require('debug')('youtrack:youtrack');
 const moment = require('moment');
 const qs = require('querystring');
 
-const config = require('./bot-config.json');
-
 debug.log = console.log.bind(console);
 
 class Youtrack {
@@ -51,6 +49,10 @@ class Youtrack {
         for (let issue of issues) {
             let _issue = await this.issueChanges(issue.id, options.updatedAfter);
             debug('issuesChanges() _issue=', _issue);
+
+            if (_issue.__error)
+                continue;
+
             issuesWithChanges.push(_issue);
         }
         debug('issuesChanges() Count of issues with changes:', issuesWithChanges.length);
@@ -99,6 +101,7 @@ class Youtrack {
             response = JSON.parse(response);
         }
         catch (err) {
+            issue.__error = err;
             debug('issueChanges() error=', err);
             if (err.statusCode == 404) {
                 return issue;
@@ -185,6 +188,7 @@ class Youtrack {
         }
 
         return issue.changes.filter(change => {
+            debug('_changesUpdatedAfter() issue=', issue, 'tsUpdated=', tsUpdated, 'change.updated >= tsUpdated ==>', change.updated >= tsUpdated);
             return change.updated >= tsUpdated;
         });
     }

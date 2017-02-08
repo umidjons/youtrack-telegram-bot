@@ -14,5 +14,5 @@
   "error_file": "/home/ubuntu/youtrack_telegram_bot/logs/youtrack_bot_error.log",
   "exec_mode": "cluster",
   "instances": 1,
-  "cron_restart": "*/2 * * * *"
+  "cron_restart": "*/5 * * * *"
 }

@@ -5,7 +5,6 @@ const moment = require('moment');
 const fs = require('fs');
 const path = require('path');
 const debug = require('debug')('youtrack:bot');
-const config = require('./bot-config.json');
 const Youtrack = require('./youtrack');
 
 debug.log = console.log.bind(console);
