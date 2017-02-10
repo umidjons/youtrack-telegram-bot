@@ -188,7 +188,7 @@ class Youtrack {
         }
 
         return issue.changes.filter(change => {
-            debug('_changesUpdatedAfter() issue=', issue, 'tsUpdated=', tsUpdated, 'change.updated >= tsUpdated ==>', change.updated >= tsUpdated);
+            debug('_changesUpdatedAfter() issue=', issue, 'change=', change, 'tsUpdated=', tsUpdated, 'change.updated >= tsUpdated ==>', change.updated >= tsUpdated);
             return change.updated >= tsUpdated;
         });
     }

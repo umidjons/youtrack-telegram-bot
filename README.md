@@ -137,3 +137,8 @@ Demo configuration is here:
 `projects.token` - Telegram Token for the specific project.
 
 `projectName` - project ID from YouTrack.
+
+## Additional Notes
+
+Issue updates may be duplicated, if there is difference between Youtrack and Bot date time.
+Consider avoiding such problems with NTP or something like it.
