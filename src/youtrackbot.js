@@ -67,13 +67,23 @@ class YoutrackBot {
         fs.writeFileSync(this.file, last);
     }
 
+    _escape(data) {
+        if (!data)
+            return data;
+
+        let escaped = data.replace('&', '&amp;');
+        escaped = escaped.replace('<', '&lt;');
+        escaped = escaped.replace('>', '&gt;');
+        return escaped;
+    }
+
     _process() {
         debug('_process() started.');
         return new Promise(async(resolve, reject) => {
             try {
 
                 for (let issue of this.issues) {
-                    issue.description = issue.description ? `\n<pre>${issue.description}</pre>` : '';
+                    issue.description = issue.description ? `\n<pre>${this._escape(issue.description)}</pre>` : '';
                     issue.url = `${this.youtrackIssueBaseUrl}${issue.id}`;
                     issue.operation = issue.changes && issue.changes.length > 0 ? 'updated' : 'created'; // operation: created | updated
                     issue.attachments = this._getAttachments(issue);
@@ -115,7 +125,7 @@ class YoutrackBot {
             attachments += '\n<i>Attachments:</i>\n';
 
             for (let attachment of issue.attachments) {
-                attachments += `<a href="${attachment.url}">${attachment.value}</a>\n`;
+                attachments += `<a href="${attachment.url}">${this._escape(attachment.value)}</a>\n`;
             }
         }
 
@@ -126,7 +136,7 @@ class YoutrackBot {
 
     _getMessage(issue, changedFields, time) {
         let timeStr = moment(1 * time).format(DATETIME_FORMAT);
-        let msg = `<b>${issue.updaterName}</b> ${timeStr} ${issue.operation} <a href="${issue.url}">${issue.id}</a> ${issue.summary} ${issue.description} ${changedFields} ${issue.attachments}`;
+        let msg = `<b>${this._escape(issue.updaterName)}</b> ${timeStr} ${issue.operation} <a href="${issue.url}">${issue.id}</a> ${this._escape(issue.summary)} ${issue.description} ${changedFields} ${issue.attachments}`;
 
         debug('_getMessage() message=', msg);
 
@@ -162,7 +172,7 @@ class YoutrackBot {
                 }
 
                 if (oldVal || newVal) {
-                    changedFields += `\n<i>${changedField}: ${oldVal} -> ${newVal}</i>`;
+                    changedFields += `\n<i>${changedField}: ${this._escape(oldVal)} -> ${this._escape(newVal)}</i>`;
                 }
             }
 
