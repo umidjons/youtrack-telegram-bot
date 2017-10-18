@@ -1,8 +1,10 @@
-.idea
-node_modules
-last/*
-src/bot-config.json
+/.idea/
+/.vscode/
+/node_modules/
+/last/
+/logs/
+/src/bot-config.json
 /INSTRUCTION.md
-logs/
-_bot-config.json
-app2.json
+/bot-config.json
+/app2.json
+/package-lock.json
