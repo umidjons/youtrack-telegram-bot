@@ -11,39 +11,9 @@ class Youtrack {
     constructor(config) {
         this.config = config;
         this.baseUrl = this.config.youtrack.baseUrl;
-        this.accessToken = null;
-        this.tokenType = null;
     }
 
-    /**
-     * Gets access token by Client Service ID and Client Service Secret values.
-     * @returns {Promise.<void>}
-     */
-    async getAccessToken() {
-        // generate Base64(CLIENT_SERVICE_ID:CLIENT_SERVICE_SECRET) Authorization value
-        let authValue = (new Buffer(this.config.youtrack.oauth2.clientServiceId + ':' + this.config.youtrack.oauth2.clientServiceSecret)).toString('base64');
-
-        let params = {
-            url: this.config.youtrack.oauth2.url,
-            headers: {
-                Accept: 'application/json',
-                Authorization: 'Basic ' + authValue
-            },
-            form: {grant_type: 'client_credentials', scope: this.config.youtrack.oauth2.scope}
-        };
-
-        let response = await request.post(params);
-        debug('getAccessToken() response=%O', response);
-
-        response = JSON.parse(response);
-
-        this.tokenType = response.token_type;
-        this.accessToken = response.access_token;
-
-        return response;
-    }
-
-    async issuesChanges(projectName, options = {updatedAfter: moment().subtract(1, 'days').format('x'), max: 10}) {
+    async issuesChanges(projectName, options = { updatedAfter: moment().subtract(1, 'days').format('x'), max: 10 }) {
         let issues = await this.issuesByProject(projectName, options);
         let issuesWithChanges = [];
         for (let issue of issues) {
@@ -59,7 +29,7 @@ class Youtrack {
         return issuesWithChanges;
     }
 
-    async issuesByProject(projectName, options = {updatedAfter: moment().subtract(1, 'days').format('x'), max: 10}) {
+    async issuesByProject(projectName, options = { updatedAfter: moment().subtract(1, 'days').format('x'), max: 10 }) {
         let queryParams = {
             updatedAfter: options.updatedAfter,
             max: options.max,
@@ -68,7 +38,7 @@ class Youtrack {
 
         queryParams = qs.stringify(queryParams);
         let url = `${this.baseUrl}/rest/issue/byproject/${projectName}?${queryParams}`;
-        let params = {url: url, headers: this._getHeaders()};
+        let params = { url: url, headers: this._getHeaders() };
         let response = await request.get(params);
         response = JSON.parse(response);
 
@@ -80,7 +50,7 @@ class Youtrack {
                 debug('issuesByProject() Ignoring invalid issue: ', issue);
                 continue;
             }
-            let _issue = Object.assign({id: issue.id}, this._normalizeFields(issue.field));
+            let _issue = Object.assign({ id: issue.id }, this._normalizeFields(issue.field));
             issueList.push(_issue);
         }
 
@@ -91,8 +61,8 @@ class Youtrack {
 
     async issueChanges(issueId, updatedAfter) {
         let url = `${this.baseUrl}/rest/issue/${issueId}/changes`;
-        let params = {url: url, headers: this._getHeaders()};
-        let issue = {changes: []};
+        let params = { url: url, headers: this._getHeaders() };
+        let issue = { changes: [] };
 
         let response = null;
 
@@ -119,7 +89,7 @@ class Youtrack {
 
         if (response.change) {
             for (let change of response.change) {
-                let _change = {changedFields: []};
+                let _change = { changedFields: [] };
                 let res = this._normalizeFields(change.field);
                 issue.changes.push(res);
             }
@@ -165,7 +135,7 @@ class Youtrack {
                     }
                 }
 
-                object[field.name] = {oldValue: oldVal, newValue: newVal};
+                object[field.name] = { oldValue: oldVal, newValue: newVal };
             }
             else {
                 object[field.name] = field.value;
@@ -194,11 +164,11 @@ class Youtrack {
     }
 
     _getHeaders() {
-        let headers = {Accept: 'application/json'};
+        let headers = { Accept: 'application/json' };
 
         // set access token if exists
-        if (this.accessToken)
-            headers.Authorization = this.tokenType + ' ' + this.accessToken;
+        if (this.config.youtrack.token)
+            headers.Authorization = this.config.youtrack.authType + ' ' + this.config.youtrack.token;
 
         return headers;
     }
