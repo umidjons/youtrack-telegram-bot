@@ -2,7 +2,7 @@
 
 const debug = require('debug')('youtrack:app');
 const YouTrackBot = require('./youtrackbot');
-const config = require('./bot-config-sample.json');
+const config = require('./bot-config.json');
 
 debug.log = console.log.bind(console);
 

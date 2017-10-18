@@ -31,7 +31,6 @@ class YoutrackBot {
 
         this.yt = new Youtrack(this.config);
 
-        let token = await this.yt.getAccessToken();
         let last = await this._getUpdatedAfter();
 
         this.issues = await this.yt.issuesChanges(this.projectName, {updatedAfter: last.ts, max: max});
