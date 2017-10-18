@@ -1,22 +1,17 @@
 {
   "youtrack": {
-    "authType": "oauth2",
-    "baseUrl": "https://my-company.myjetbrains.com/youtrack",
-    "oauth2": {
-      "url": "https://my-company.myjetbrains.com/hub/api/rest/oauth2/token",
-      "clientServiceId": "1fac2ed9-2140-43d9-af3e-3a4a2550ba34",
-      "clientServiceSecret": "41f1dd66-9ece-4408-94d3-ab683a0a684e",
-      "scope": "1fac2ed9-2140-43d9-af3e-3a4a2550ba34"
-    }
+    "authType": "Bearer",
+    "baseUrl": "https://example.myjetbrains.com/youtrack",
+    "token": "perm:0123456789dvdg==.SG9tZS15b3V0cmFjay0123456789bS1ib3Q=.l01234567899Jlj2YRJFSYMgfBaK2w"
   },
   "telegram": {
-    "defaultToken": "183108291:BAFK8LNaQc0MP1GlAe9SxCd-cjc1hz-zCdw",
+    "defaultToken": "012345678:AAFRIKAKfAR3dQNMgQAwmye7r7-0123456789",
     "max": 500,
     "projects": [
       {
-        "token": "183108291:BAFK8LNaQc0MP1GlAe9SxCd-cjc1hz-zCdw",
-        "projectName": "MY_PROJECT_NAME",
-        "chatId": "-1002095315097"
+        "token": "012345678:AAFKfAR3dQNMgQAwmye7r7-0123456789",
+        "projectName": "PROJECT",
+        "chatId": "-0123456789"
       }
     ]
   }
